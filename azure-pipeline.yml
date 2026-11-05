@@ -1,0 +1,56 @@
+# ZeroViagem - Azure Repos -> GitHub
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: vg-github-sync
+
+stages:
+  - stage: SyncGitHub
+    displayName: 'Sincronizacao com GitHub'
+    jobs:
+      - job: MirrorRepository
+        displayName: 'Espelhar main no GitHub'
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            persistCredentials: false
+
+          - bash: |
+              set -euo pipefail
+
+              ASKPASS_FILE="$(Agent.TempDirectory)/github-askpass.sh"
+
+              cat > "$ASKPASS_FILE" <<'EOF'
+              #!/bin/sh
+              case "$1" in
+                *Username*) printf '%s\n' 'x-access-token' ;;
+                *Password*) printf '%s\n' "$GITHUB_TOKEN" ;;
+              esac
+              EOF
+
+              chmod 700 "$ASKPASS_FILE"
+              trap 'rm -f "$ASKPASS_FILE"' EXIT
+
+              export GIT_ASKPASS="$ASKPASS_FILE"
+              export GIT_TERMINAL_PROMPT=0
+
+              git remote add github \
+                "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}.git"
+
+              git push github HEAD:refs/heads/main
+
+              echo "Sincronizacao concluida!"
+            displayName: 'Publicar main no GitHub'
+            env:
+              GITHUB_TOKEN: $(GITHUB_TOKEN)
+              GITHUB_OWNER: $(GITHUB_OWNER)
+              GITHUB_REPO: $(Build.Repository.Name)
